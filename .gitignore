@@ -1,4 +1,6 @@
 /credentials
+/docker/logs
+docker/dags/__pycache__
 *.tfvars
 *.tfvars.json
 **/.terraform/*
