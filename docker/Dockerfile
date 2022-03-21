@@ -5,9 +5,6 @@ ENV AIRFLOW_HOME=/opt/airflow
 USER root
 RUN apt-get update -qq && apt-get install vim -qqq
 
-# create folder for kaggle
-# RUN mkdir ~/.kaggle
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

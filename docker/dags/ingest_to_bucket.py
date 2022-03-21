@@ -1,5 +1,6 @@
 import os
 import logging
+import boto3
 import pyarrow.csv as pv
 import pyarrow.parquet as pq
 
@@ -11,11 +12,13 @@ from airflow.operators.dummy import DummyOperator
 
 DATASET = "patrickhallila1994/nba-data-from-basketball-reference"
 FOLDER = "/home/airflow/data"
-FILES = [
+CSV = [
     "boxscore.csv", "coaches.csv", "games.csv",
     "play_data.csv", "player_info.csv", "salaries.csv"
 ]
-NAMES = [n[:-4] for n in FILES]
+NAMES = [n[:-4] for n in CSV]
+PARQUET = [n + '.parquet' for n in NAMES]
+BUCKET = "nba-b1gl4lsgd698odl01pn3"
 
 
 def format_to_parquet(src_file):
@@ -29,6 +32,26 @@ def format_to_parquet(src_file):
         return 1
     table = pv.read_csv(src_file)
     pq.write_table(table, src_file.replace(".csv", ".parquet"))
+    return 0
+
+
+def load_to_bucket(file, bucket, key):
+    """Upload file to s3 yandex cloud bucket.
+    Keyword Arguments:
+        file: the path to file.
+        bucket: s3 bucket name to upload to.
+        key: bucket filepath to upload to.
+    Returns:
+        0 if successful, 1 if there is an error."""
+
+    session = boto3.session.Session()
+    s3 = session.client(
+        service_name="s3",
+        endpoint_url="https://storage.yandexcloud.net"
+    )
+
+    s3.upload_file(file, bucket, key)
+    return 0
 
 
 default_args = {
@@ -55,7 +78,7 @@ download_datasets = BashOperator(
 
 
 format_files = []
-for f, n in zip(FILES, NAMES):
+for f, n in zip(CSV, NAMES):
     format_files.append(PythonOperator(
         task_id="format_{0}_to_parquet".format(n),
         python_callable=format_to_parquet,
@@ -65,11 +88,34 @@ for f, n in zip(FILES, NAMES):
         dag=dag
     ))
 
-finish_dummy = DummyOperator(
-    task_id="finish",
+upload_files = []
+for f, n in zip(PARQUET, NAMES):
+    upload_files.append(PythonOperator(
+        task_id=F"upload_{n}",
+        python_callable=load_to_bucket,
+        op_kwargs={
+            "file": os.path.join(FOLDER, f),
+            "bucket": BUCKET,
+            "key": f,
+        },
+        dag=dag
+    ))
+
+finish_formatting = DummyOperator(
+    task_id="finish_formatting",
+    dag=dag
+)
+
+delete_datasets = BashOperator(
+    task_id="delete_datasets",
+    bash_command=F"rm -r {FOLDER}",
     dag=dag
 )
 
 for ff in format_files:
     download_datasets >> ff
-format_files >> finish_dummy
+format_files >> finish_formatting
+
+for uf in upload_files:
+    finish_formatting >> uf
+upload_files >> delete_datasets 
