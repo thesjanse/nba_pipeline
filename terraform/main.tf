@@ -13,9 +13,26 @@ provider "yandex" {
   zone      = var.zone
 }
 
+# create object storage service account
+resource "yandex_iam_service_account" "storage-sa" {
+  name        = "storage-sa"
+  description = "Service account for object storage management."
+  folder_id   = var.folder_id
+}
+
+# provide role for object storage service account
+resource "yandex_resourcemanager_folder_iam_binding" "storage-uploader-iam" {
+  folder_id = var.folder_id
+  role      = "storage.admin"
+
+  members = [
+    "serviceAccount:${yandex_iam_service_account.storage-sa.id}"
+  ]
+}
+
 # create static access key
 resource "yandex_iam_service_account_static_access_key" "sa-static-key" {
-  service_account_id = var.service_account_id
+  service_account_id = yandex_iam_service_account.storage-sa.id
   description        = "Static Access Key for object storage."
 }
 

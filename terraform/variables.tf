@@ -14,8 +14,3 @@ variable "zone" {
   default     = "ru-central1-a"
   type        = string
 }
-
-variable "service_account_id" {
-  description = "Service account Id"
-  type        = string
-}
