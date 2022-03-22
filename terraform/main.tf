@@ -43,3 +43,153 @@ resource "yandex_storage_bucket" "data-lake" {
   access_key    = yandex_iam_service_account_static_access_key.sa-static-key.access_key
   secret_key    = yandex_iam_service_account_static_access_key.sa-static-key.secret_key
 }
+
+# initialize network
+resource "yandex_vpc_network" "main-network" {
+  name = "main-network"
+}
+
+# initialize subnetwork
+resource "yandex_vpc_subnet" "clickhouse-subnet" {
+  name           = "clickhouse-subnet"
+  zone           = var.zone
+  network_id     = yandex_vpc_network.main-network.id
+  v4_cidr_blocks = ["192.168.0.0/16"]
+}
+
+#initialize clickhouse
+resource "yandex_mdb_clickhouse_cluster" "clickhouse" {
+  name                = "clickhouse"
+  network_id          = yandex_vpc_network.main-network.id
+  environment         = "PRESTABLE"
+  deletion_protection = false
+
+  admin_password          = var.clickhouse_admin_password
+  sql_user_management     = true
+  sql_database_management = true
+
+  clickhouse {
+    resources {
+      resource_preset_id = "b1.micro"
+      disk_type_id       = "network-hdd"
+      disk_size          = 12
+    }
+
+    config {
+      log_level                       = "TRACE"
+      max_connections                 = 20
+      max_concurrent_queries          = 100
+      keep_alive_timeout              = 5
+      uncompressed_cache_size         = 2000000000
+      mark_cache_size                 = 2000000000
+      max_partition_size_to_drop      = 0
+      max_table_size_to_drop          = 0
+      timezone                        = "UTC"
+      geobase_uri                     = ""
+      metric_log_enabled              = true
+      metric_log_retention_size       = 222870912
+      metric_log_retention_time       = 3600000
+      part_log_retention_size         = 222870912
+      part_log_retention_time         = 3600000
+      query_log_retention_size        = 222870912
+      query_log_retention_time        = 3600000
+      query_thread_log_enabled        = true
+      query_thread_log_retention_size = 222870912
+      query_thread_log_retention_time = 3600000
+      text_log_enabled                = true
+      text_log_retention_size         = 222870912
+      text_log_retention_time         = 3600000
+      text_log_level                  = "TRACE"
+
+      merge_tree {
+        replicated_deduplication_window                           = 100
+        replicated_deduplication_window_seconds                   = 604800
+        parts_to_delay_insert                                     = 150
+        parts_to_throw_insert                                     = 300
+        max_replicated_merges_in_queue                            = 16
+        number_of_free_entries_in_pool_to_lower_max_size_of_merge = 8
+        max_bytes_to_merge_at_min_space_in_pool                   = 1048576
+      }
+
+      kafka {
+        security_protocol = "SECURITY_PROTOCOL_PLAINTEXT"
+        sasl_mechanism    = "SASL_MECHANISM_GSSAPI"
+        sasl_username     = var.sasl_username
+        sasl_password     = var.sasl_password
+      }
+
+      rabbitmq {
+        username = var.rabbit_user
+        password = var.rabbit_password
+      }
+
+      compression {
+        method              = "LZ4"
+        min_part_size       = 1024
+        min_part_size_ratio = 0.5
+      }
+
+      compression {
+        method              = "ZSTD"
+        min_part_size       = 2048
+        min_part_size_ratio = 0.7
+      }
+
+      graphite_rollup {
+        name = "rollup1"
+        pattern {
+          regexp   = "abc"
+          function = "func1"
+          retention {
+            age       = 1000
+            precision = 3
+          }
+        }
+      }
+
+      graphite_rollup {
+        name = "rollup2"
+        pattern {
+          function = "func2"
+          retention {
+            age       = 2000
+            precision = 5
+          }
+        }
+      }
+
+    }
+  }
+
+  # database {
+  #   name = var.clickhouse_db_name
+  # }
+
+  # user {
+  #   name     = var.clickhouse_username
+  #   password = var.clickhouse_password
+  #   permission {
+  #     database_name = var.clickhouse_db_name
+  #   }
+  # }
+
+  host {
+    type      = "CLICKHOUSE"
+    zone      = var.zone
+    subnet_id = yandex_vpc_subnet.clickhouse-subnet.id
+  }
+
+  maintenance_window {
+    type = "WEEKLY"
+    day  = "SUN"
+    hour = 12
+  }
+
+  access {
+    data_lens  = true
+    metrika    = false
+    serverless = false
+    web_sql    = true
+  }
+
+}
