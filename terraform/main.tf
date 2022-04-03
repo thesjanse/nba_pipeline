@@ -36,12 +36,58 @@ resource "yandex_iam_service_account_static_access_key" "sa-static-key" {
   description        = "Static Access Key for object storage."
 }
 
-# initialize bucket
+# create dataproc sevice account
+resource "yandex_iam_service_account" "dataproc-sa" {
+  name        = "dataproc-sa"
+  description = "Service account for dataproc cluster."
+  folder_id   = var.folder_id
+}
+
+# provide roles for dataproc service account
+resource "yandex_resourcemanager_folder_iam_binding" "dataproc-agent-iam" {
+  folder_id = var.folder_id
+  role      = "dataproc.agent"
+
+  members = [
+    "serviceAccount:${yandex_iam_service_account.dataproc-sa.id}"
+  ]
+}
+
+resource "yandex_resourcemanager_folder_iam_binding" "dataproc-storage-iam" {
+  folder_id = var.folder_id
+  role      = "storage.editor"
+
+  members = [
+    "serviceAccount:${yandex_iam_service_account.dataproc-sa.id}"
+  ]
+}
+
+# initialize data lake bucket
 resource "yandex_storage_bucket" "data-lake" {
   bucket        = "nba-${var.folder_id}"
   force_destroy = true
   access_key    = yandex_iam_service_account_static_access_key.sa-static-key.access_key
   secret_key    = yandex_iam_service_account_static_access_key.sa-static-key.secret_key
+
+  grant {
+    id          = yandex_iam_service_account.dataproc-sa.id
+    type        = "CanonicalUser"
+    permissions = ["READ"]
+  }
+}
+
+# initialize dataproc bucket
+resource "yandex_storage_bucket" "dataproc-bucket" {
+  bucket        = "dataproc-bucket-${var.folder_id}"
+  force_destroy = true
+  access_key    = yandex_iam_service_account_static_access_key.sa-static-key.access_key
+  secret_key    = yandex_iam_service_account_static_access_key.sa-static-key.secret_key
+
+  grant {
+    id          = yandex_iam_service_account.dataproc-sa.id
+    type        = "CanonicalUser"
+    permissions = ["READ", "WRITE"]
+  }
 }
 
 # initialize network
@@ -54,19 +100,25 @@ resource "yandex_vpc_subnet" "clickhouse-subnet" {
   name           = "clickhouse-subnet"
   zone           = var.zone
   network_id     = yandex_vpc_network.main-network.id
-  v4_cidr_blocks = ["192.168.0.0/16"]
+  v4_cidr_blocks = ["10.1.0.0/24"]
+}
+
+# get external ip
+resource "yandex_vpc_address" "ext_clickhouse_address" {
+  name = "clickhouse_address"
+
+  external_ipv4_address {
+    zone_id = var.zone
+  }
 }
 
 #initialize clickhouse
 resource "yandex_mdb_clickhouse_cluster" "clickhouse" {
   name                = "clickhouse"
   network_id          = yandex_vpc_network.main-network.id
-  environment         = "PRESTABLE"
+  environment         = "PRODUCTION"
   deletion_protection = false
 
-  admin_password          = var.clickhouse_admin_password
-  sql_user_management     = true
-  sql_database_management = true
 
   clickhouse {
     resources {
@@ -161,17 +213,17 @@ resource "yandex_mdb_clickhouse_cluster" "clickhouse" {
     }
   }
 
-  # database {
-  #   name = var.clickhouse_db_name
-  # }
+  database {
+    name = var.clickhouse_db_name
+  }
 
-  # user {
-  #   name     = var.clickhouse_username
-  #   password = var.clickhouse_password
-  #   permission {
-  #     database_name = var.clickhouse_db_name
-  #   }
-  # }
+  user {
+    name     = var.clickhouse_username
+    password = var.clickhouse_password
+    permission {
+      database_name = var.clickhouse_db_name
+    }
+  }
 
   host {
     type      = "CLICKHOUSE"
@@ -191,5 +243,4 @@ resource "yandex_mdb_clickhouse_cluster" "clickhouse" {
     serverless = false
     web_sql    = true
   }
-
 }

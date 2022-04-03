@@ -58,13 +58,16 @@ x-airflow-common:
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- kaggle boto3}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- kaggle boto3 apache-airflow-providers-yandex pyarrow}
+    AIRFLOW_CONN_YANDEXCLOUD_DEFAULT: 'yandexcloud://?extra__yandexcloud__service_account_json_path=/.yandex/credentials/yandex_credentials.json'
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ../credentials/kaggle:/home/airflow/.kaggle
     - ../credentials/object_storage:/home/airflow/.aws
+    - ../credentials/tf_output:/home/airflow/tf_output
+    - ../credentials/yandex:/.yandex/credentials
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on

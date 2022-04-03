@@ -1,6 +1,7 @@
 import os
 import logging
 import boto3
+import json
 import pyarrow.csv as pv
 import pyarrow.parquet as pq
 
@@ -10,6 +11,8 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.operators.dummy import DummyOperator
 
+from datetime import timedelta, datetime
+
 DATASET = "patrickhallila1994/nba-data-from-basketball-reference"
 FOLDER = "/home/airflow/data"
 CSV = [
@@ -18,7 +21,15 @@ CSV = [
 ]
 NAMES = [n[:-4] for n in CSV]
 PARQUET = [n + '.parquet' for n in NAMES]
-BUCKET = "nba-b1gl4lsgd698odl01pn3"
+
+PY_FOLDER = "/opt/airflow/dags/extra/"
+PY = ["transform_nba.py"]
+
+# read tf-output.json string
+with open("/home/airflow/tf_output/tf-output.json", "r") as f:
+    tf = json.load(f)
+DATA_BUCKET = tf["data_bucket"]
+DP_BUCKET = tf["dp_bucket"]
 
 
 def format_to_parquet(src_file):
@@ -56,14 +67,15 @@ def load_to_bucket(file, bucket, key):
 
 default_args = {
     "owner": "airflow",
-    "start_date": days_ago(1),
+    "start_date": datetime(2022, 4, 3),
     "depends_on_past": False,
     "retries": 1,
+    "retry_delay": timedelta(minutes=5)
 }
 
 dag = DAG(
     dag_id="ingest_to_bucket",
-    schedule_interval="@once",
+    schedule_interval="00 10 1 * *",
     default_args=default_args,
     catchup=False,
     max_active_runs=1,
@@ -95,8 +107,21 @@ for f, n in zip(PARQUET, NAMES):
         python_callable=load_to_bucket,
         op_kwargs={
             "file": os.path.join(FOLDER, f),
-            "bucket": BUCKET,
+            "bucket": DATA_BUCKET,
             "key": f,
+        },
+        dag=dag
+    ))
+
+upload_scripts = []
+for f in PY:
+    upload_scripts.append(PythonOperator(
+        task_id=F"upload_{f[:-3]}",
+        python_callable=load_to_bucket,
+        op_kwargs={
+            "file": os.path.join(PY_FOLDER, f),
+            "bucket": DP_BUCKET,
+            "key": f
         },
         dag=dag
     ))
@@ -119,3 +144,4 @@ format_files >> finish_formatting
 for uf in upload_files:
     finish_formatting >> uf
 upload_files >> delete_datasets 
+upload_scripts >> delete_datasets

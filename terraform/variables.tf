@@ -21,12 +21,6 @@ variable "clickhouse_db_name" {
   type        = string
 }
 
-variable "clickhouse_admin_password" {
-  description = "Password for clickhouse admin user"
-  type        = string
-  sensitive   = true
-}
-
 variable "clickhouse_username" {
   description = "Username for clickhouse database"
   type        = string

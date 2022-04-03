@@ -5,12 +5,12 @@ ENV AIRFLOW_HOME=/opt/airflow
 USER root
 RUN apt-get update -qq && apt-get install vim -qqq
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 # Ref: https://airflow.apache.org/docs/docker-stack/recipes.html
 
 SHELL ["/bin/bash", "-o", "pipefail", "-e", "-u", "-x", "-c"]
+
+RUN mkdir /home/airflow/.ssh
+RUN ssh-keygen -t rsa -b 2048 -q -N '' -f /home/airflow/.ssh/id_rsa
 
 WORKDIR $AIRFLOW_HOME
 USER $AIRFLOW_UID
